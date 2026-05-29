@@ -1,0 +1,75 @@
+[project]
+name = "jepa-step"
+version = "0.0.1"
+description = "JEPA-STEP — structured progression subspaces for latent world models from pixels."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+authors = [
+    { name = "Lucas Maes", email = "thil@lix.polytechnique.fr" },
+]
+license = { text = "MIT" }
+
+# Core runtime dependencies, mirroring LeWM's imports (see le-wm-step/train.py
+# and module.py). Everything here is pinned loosely enough that uv will pick
+# wheels that match Lucas's CUDA / Python version; nail versions down later
+# once the first training run succeeds.
+dependencies = [
+    # RTX 5090 is Blackwell (sm_120); PyTorch 2.6+ is the first release that
+    # ships sm_120 kernels. Use the cu128 index — the only index that bundles
+    # Blackwell wheels (driver supports CUDA 13.0, so cu128 is fine).
+    "torch>=2.6",
+    "torchvision>=0.21",
+    "einops>=0.8",
+    "hydra-core>=1.3",
+    "omegaconf>=2.3",
+    "lightning>=2.3",
+    "wandb>=0.17",
+    "numpy>=1.26",
+    "scikit-learn>=1.5",
+    "h5py>=3.11",
+    "hydra-submitit-launcher>=1.2",
+    # stable-pretraining and stable-worldmodel ship only as git packages:
+    "stable-pretraining @ git+https://github.com/galilai-group/stable-pretraining.git",
+    "stable-worldmodel  @ git+https://github.com/galilai-group/stable-worldmodel.git",
+    # Push-T / MuJoCo dependencies for eval (stable-worldmodel pulls these
+    # transitively, but listing them here keeps uv honest):
+    "mujoco>=3.2",
+    "gymnasium>=0.29",
+    "pygame>=2.6.1",
+    "pymunk>=7.2.0",
+    "opencv-python-headless>=4.13.0.92",
+    "shapely>=2.1.2",
+    "pillow>=12.2.0",
+    "imageio[ffmpeg]>=2.37.3",
+    "hdf5plugin>=6.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+# The project is research code, not a packaged library — we don't ship
+# anything from src/. Point setuptools at an empty namespace to keep
+# `pip install -e .` quiet.
+py-modules = []
+
+[tool.uv]
+# By default uv tries to publish compiled packages; turn that off here so
+# `uv sync` doesn't trip on the stable-* git deps.
+package = false
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+torchvision = [{ index = "pytorch-cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

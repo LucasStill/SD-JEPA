@@ -1,0 +1,95 @@
+defaults:
+  - _self_
+  - data: pusht
+
+output_model_name: lewm_step
+subdir: ${hydra:job.id}
+
+# num_workers=4 + prefetch_factor=2 keeps the DataLoader RAM footprint
+# ~1.5 GB (4 workers × 2 prefetch × batch 128 × ~5 frames × 224×224×3 ×
+# float32 pinned). Raise if you have plenty of host RAM.
+num_workers: 4
+train_split: 0.9
+seed: 3072
+img_size: 224
+patch_size: 14
+encoder_scale: tiny
+dump_object: True
+
+trainer:
+  # 10 epochs is the default ablation budget. Raise for longer schedules.
+  max_epochs: 10
+  devices: auto
+  accelerator: gpu
+  precision: bf16
+  gradient_clip_val: 1.0
+
+loader:
+  batch_size: 128
+  num_workers: ${num_workers}
+  persistent_workers: True
+  prefetch_factor: 2            # was 3 — cuts per-worker prefetch RAM 33%
+  pin_memory: True
+
+optimizer:
+  type: AdamW
+  lr: 5e-5
+  weight_decay: 1e-3
+
+wandb:
+  enabled: True
+  config:
+    entity: your_entity
+    project: your_project
+    name: ${output_model_name}
+    # id: ${subdir}       # unused while resume=never
+    resume: never
+    log_model: False
+    # Cluster-friendly: write to ./wandb locally and sync later with
+    # `wandb sync wandb/offline-run-*`. Override to False on a machine with
+    # outbound internet if you want live logging.
+    offline: True
+
+wm:
+  type: lewm
+  history_size: 3
+  num_preds: 1
+  embed_dim: 192
+  # ---- JEPA-STEP additions ----
+  k_prog: 2          # dimension of progression subspace (0 disables the split)
+  use_polar: true    # concat (sin θ, cos θ, r) to AdaLN conditioning
+
+predictor:
+  depth: 6
+  heads: 16
+  mlp_dim: 2048
+  dim_head: 64
+  dropout: 0.1
+  emb_dropout: 0.0
+
+loss:
+  sigreg:
+    weight: 0.09           # λ_S  (acts on emb_cont when k_prog > 0)
+    kwargs:
+      knots: 17
+      num_proj: 1024
+  # ---- JEPA-STEP additions ----
+  triplet:
+    weight: 0.10           # λ_T  — set 0.0 for ablation A0
+    margin: 0.2            # cosine-margin m
+    window_tau: 1          # positive-sampling temporal radius
+    target: auto           # "auto" | "full" | "prog" — which embedding to apply triplet to
+  proto:
+    weight: 0.10           # λ_P
+    # Prototype anchoring mode:
+    #   "hard"          : window's first/last frames → e_1/e_2.
+    #                     Original STEP-style; empirically destabilises
+    #                     training under sub-window sampling.
+    #   "first_anchor"  : Sketch A-self. Pull only genuine
+    #                     first-of-episode frames toward e_1; end frames
+    #                     are not anchored. Requires ``step_idx`` in the
+    #                     dataloader's batch dict (already in keys_to_load).
+    mode: hard
+    k_f: 3                 # boundary window size for "first_anchor" mode
+  straight:
+    weight: 0.05           # λ_str

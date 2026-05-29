@@ -1,0 +1,71 @@
+defaults:
+  - _self_
+  - data: pusht
+
+output_model_name: lewm
+subdir: ${hydra:job.id}
+
+# Matches lewm_step.yaml — see that file for rationale on the RAM budget.
+num_workers: 4
+train_split: 0.9
+seed: 3072
+img_size: 224
+patch_size: 14
+encoder_scale: tiny
+dump_object: True
+
+trainer:
+  # Kept in lockstep with lewm_step.yaml so A0 and A6 train for the same
+  # number of epochs (apples-to-apples comparison in the ablation).
+  max_epochs: 10
+  devices: auto
+  accelerator: gpu
+  precision: bf16
+  gradient_clip_val: 1.0
+
+loader:
+  batch_size: 128
+  num_workers: ${num_workers}
+  persistent_workers: True
+  prefetch_factor: 2
+  pin_memory: True
+
+optimizer:
+  type: AdamW
+  lr: 5e-5
+  weight_decay: 1e-3
+
+wandb:
+  enabled: True
+  config:
+    entity: your_entity
+    project: your_project
+    name: ${output_model_name}
+    # id: ${subdir}       # unused while resume=never
+    resume: never
+    log_model: False
+    # Cluster-friendly: write to ./wandb locally and sync later with
+    # `wandb sync wandb/offline-run-*`. Override to False on a machine with
+    # outbound internet if you want live logging.
+    offline: True
+
+wm:
+  type: lewm
+  history_size: 3
+  num_preds: 1
+  embed_dim: 192
+
+predictor:
+  depth: 6
+  heads: 16
+  mlp_dim: 2048
+  dim_head: 64
+  dropout: 0.1
+  emb_dropout: 0.0
+
+loss:
+  sigreg:
+    weight: 0.09
+    kwargs:
+      knots: 17
+      num_proj: 1024
